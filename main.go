@@ -46,6 +46,11 @@ func init() {
 }
 
 func main() {
+	var err error
+
+	defer func() {
+		errorNotify(err.Error())
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 365*24*time.Hour)
 	defer cancel()
@@ -176,14 +181,14 @@ type botSendMessageReq struct {
 type sendMessageBody struct {
 	ChatID    string `json:"chat_id"`
 	Text      string `json:"text"`
-	ParseMode string `json:"parse_mode"`
+	ParseMode string `json:"parse_mode,omitempty"`
 }
 
 func botSendMessage(req botSendMessageReq) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 
 	reqBody := sendMessageBody{
-		ChatID: botPersonalChatID,
+		ChatID: botGroupChatID,
 		Text: fmt.Sprintf(
 			msgHtml,
 			req.InvestAmount,
@@ -218,6 +223,27 @@ func botSendMessage(req botSendMessageReq) error {
 	}
 
 	return nil
+}
+
+func errorNotify(errMsg string) {
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
+
+	reqBody := sendMessageBody{
+		ChatID: botPersonalChatID,
+		Text:   "error occur: " + errMsg,
+	}
+
+	data, err := json.Marshal(&reqBody)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+
+	_, err = defaultCli.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Println(err.Error())
+	}
 }
 
 var msgHtml = `<strong>&#128060;&#128060;&#128060;  Notify &#128060;&#128060;&#128060;</strong>

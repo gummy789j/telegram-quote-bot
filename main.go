@@ -34,7 +34,7 @@ var (
 )
 
 var (
-	flowerEmoji = "&#127882;"
+	celebrationEmoji = "&#127882;"
 )
 
 type exchange string
@@ -218,11 +218,11 @@ func botSendMessage(req botSendMessageReq) error {
 
 	arbitrage := req.Arbitrage.Mul(decimal.New(1, 2)).Truncate(2).String() + "%"
 	if req.IsExcitedArbitrage {
-		arbitrage = fmt.Sprintf("%s%s%s", flowerEmoji, arbitrage, flowerEmoji)
+		arbitrage = fmt.Sprintf("%s%s%s", celebrationEmoji, arbitrage, celebrationEmoji)
 	}
 	spread := req.Spread.String()
 	if req.IsExcitedSpread {
-		spread = fmt.Sprintf("%s%s%s", flowerEmoji, spread, flowerEmoji)
+		spread = fmt.Sprintf("%s%s%s", celebrationEmoji, spread, celebrationEmoji)
 	}
 
 	reqBody := sendMessageBody{

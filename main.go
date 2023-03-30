@@ -19,15 +19,22 @@ var defaultCli *http.Client
 var token string
 
 var (
-	defaultInvest = decimal.NewFromFloat(500000)
-	minSpread     = decimal.NewFromFloat(0.005)
-	notifyFreq    = time.Minute
+	defaultInvest    = decimal.NewFromFloat(500000)
+	minSpread        = decimal.NewFromFloat(0.15)
+	minArbitrage     = decimal.NewFromFloat(0.005)
+	excitedSpread    = decimal.NewFromFloat(0.3)
+	excitedArbitrage = decimal.NewFromFloat(0.01)
+	notifyFreq       = time.Minute
 )
 
 var (
 	botGroupChatID    = "-781207517"
 	botPersonalChatID = "1881712391"
 	author            = "t.me/gummy789j"
+)
+
+var (
+	flowerEmoji = "&#127882;"
 )
 
 type exchange string
@@ -75,18 +82,35 @@ func main() {
 
 			aInfo := calArbitrageInfo(defaultInvest, qInfo[Rybit].buyPrice, qInfo[MAX].sellPrice)
 
+			if aInfo.Arbitrage.LessThan(minArbitrage) {
+				break
+			}
+
 			if aInfo.Spread.LessThan(minSpread) {
 				break
 			}
 
+			var isExcitedArbitrage, isExcitedSpread bool
+
+			if aInfo.Arbitrage.GreaterThanOrEqual(excitedArbitrage) {
+				isExcitedArbitrage = true
+			}
+
+			if aInfo.Spread.GreaterThanOrEqual(excitedSpread) {
+				isExcitedSpread = true
+			}
+
 			if err = botSendMessage(botSendMessageReq{
-				InvestAmount: defaultInvest,
-				ExchangeBuy:  Rybit,
-				ExchangeSell: MAX,
-				BuyPrice:     qInfo[Rybit].buyPrice,
-				SellPrice:    qInfo[MAX].sellPrice,
-				Spread:       aInfo.Spread,
-				Profit:       aInfo.Profit,
+				InvestAmount:       defaultInvest,
+				ExchangeBuy:        Rybit,
+				ExchangeSell:       MAX,
+				BuyPrice:           qInfo[Rybit].buyPrice,
+				SellPrice:          qInfo[MAX].sellPrice,
+				Spread:             aInfo.Spread,
+				Arbitrage:          aInfo.Arbitrage,
+				Profit:             aInfo.Profit,
+				IsExcitedArbitrage: isExcitedArbitrage,
+				IsExcitedSpread:    isExcitedSpread,
 			}); err != nil {
 				log.Println(err.Error())
 			}
@@ -155,27 +179,32 @@ func fetchExchangeQuotation(exchanges []exchange) (map[exchange]quoteResult, err
 }
 
 type arbitrageInfo struct {
-	Profit decimal.Decimal
-	Spread decimal.Decimal
+	Profit    decimal.Decimal
+	Spread    decimal.Decimal
+	Arbitrage decimal.Decimal
 }
 
 func calArbitrageInfo(invest, buyPrice, sellPrice decimal.Decimal) arbitrageInfo {
-	spread := sellPrice.Sub(buyPrice).Div(buyPrice)
-	profit := spread.Mul(invest)
+	arbitrage := sellPrice.Sub(buyPrice).Div(buyPrice)
+	profit := arbitrage.Mul(invest)
+	spread := sellPrice.Sub(buyPrice)
 	return arbitrageInfo{
-		Profit: profit,
-		Spread: spread,
+		Profit:    profit,
+		Arbitrage: arbitrage,
+		Spread:    spread,
 	}
 }
 
 type botSendMessageReq struct {
-	InvestAmount decimal.Decimal
-	ExchangeBuy  exchange
-	ExchangeSell exchange
-	BuyPrice     decimal.Decimal
-	SellPrice    decimal.Decimal
-	Spread       decimal.Decimal
-	Profit       decimal.Decimal
+	InvestAmount                        decimal.Decimal
+	ExchangeBuy                         exchange
+	ExchangeSell                        exchange
+	BuyPrice                            decimal.Decimal
+	SellPrice                           decimal.Decimal
+	Spread                              decimal.Decimal
+	Arbitrage                           decimal.Decimal
+	Profit                              decimal.Decimal
+	IsExcitedArbitrage, IsExcitedSpread bool
 }
 
 type sendMessageBody struct {
@@ -187,16 +216,26 @@ type sendMessageBody struct {
 func botSendMessage(req botSendMessageReq) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 
+	arbitrage := req.Arbitrage.Mul(decimal.New(1, 2)).Truncate(2).String() + "%"
+	if req.IsExcitedArbitrage {
+		arbitrage = fmt.Sprintf("%s%s%s", flowerEmoji, arbitrage, flowerEmoji)
+	}
+	spread := req.Spread.String()
+	if req.IsExcitedSpread {
+		spread = fmt.Sprintf("%s%s%s", flowerEmoji, spread, flowerEmoji)
+	}
+
 	reqBody := sendMessageBody{
 		ChatID: botGroupChatID,
 		Text: fmt.Sprintf(
 			msgHtml,
+			spread,
 			req.InvestAmount,
 			req.ExchangeBuy,
 			req.BuyPrice,
 			req.ExchangeSell,
 			req.SellPrice,
-			req.Spread.Mul(decimal.New(1, 2)).Truncate(2),
+			arbitrage,
 			req.Profit.Truncate(0),
 			botPersonalChatID,
 			author,
@@ -248,10 +287,11 @@ func errorNotify(errMsg string) {
 
 var msgHtml = `<strong>&#128060;&#128060;&#128060;  Notify &#128060;&#128060;&#128060;</strong>
 <strong>=======================</strong>
+<strong>Spread: </strong><u>%s</u>
 <strong>Invested Amount: </strong><u>%s</u>
 <strong>%s Buy: </strong><u>%s</u>
 <strong>%s Sell: </strong><u>%s</u>
-<strong>Spread: </strong><u>%s</u>
+<strong>Arbitrage: </strong><u>%s</u>
 <strong>Estimated Profit: </strong><u>%s</u>
 <strong>Author: </strong><a href="tg://user?id=%s">%s</a>
 `

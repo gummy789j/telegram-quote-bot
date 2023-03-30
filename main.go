@@ -10,28 +10,18 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gummy789j/telegram-quote-bot/internal/command"
+	"github.com/gummy789j/telegram-quote-bot/internal/constant"
+	"github.com/gummy789j/telegram-quote-bot/internal/domain"
 	"github.com/shopspring/decimal"
 )
 
 var defaultCli *http.Client
 var token string
-
-var (
-	defaultInvest    = decimal.NewFromFloat(500000)
-	minSpread        = decimal.NewFromFloat(0.15)
-	minArbitrage     = decimal.NewFromFloat(0.005)
-	excitedSpread    = decimal.NewFromFloat(0.3)
-	excitedArbitrage = decimal.NewFromFloat(0.01)
-	notifyFreq       = time.Minute
-)
-
-var (
-	botGroupChatID    = "-781207517"
-	botPersonalChatID = "1881712391"
-	author            = "t.me/gummy789j"
-)
+var latestUpdateID int64
 
 var (
 	celebrationEmoji = "&#127882;"
@@ -46,11 +36,32 @@ var (
 
 func init() {
 	defaultCli = http.DefaultClient
+	defaultCli.Timeout = 30 * time.Second
+
 	token = os.Getenv("TELEGRAM_BOT_TOKEN")
+
 	if len(token) == 0 {
 		panic("token is empty")
 	}
+
+	// get the latest update id and store it
+	umResp, err := getUpdateMessage()
+	if err != nil {
+		panic(err)
+	}
+
+	if len(umResp.Result) == 0 {
+		return
+	}
+
+	for _, v := range umResp.Result {
+		if v.UpdateID > latestUpdateID {
+			latestUpdateID = v.UpdateID
+		}
+	}
 }
+
+var wg = &sync.WaitGroup{}
 
 func main() {
 	var err error
@@ -62,58 +73,155 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 365*24*time.Hour)
 	defer cancel()
 
-	ticker := time.NewTicker(notifyFreq)
+	wg.Add(2)
+
+	// notify arbitrage job
+	go notifyArbitrage(ctx)
+
+	// reply commands job
+	go replyCommand(ctx)
+
+	fmt.Println("jobs running")
+	wg.Wait()
+
+}
+
+func replyCommand(ctx context.Context) {
+	ticker := time.NewTicker(constant.ReplyFreq)
 	defer ticker.Stop()
+	fmt.Println("reply job start")
+	defer wg.Done()
 
 	for {
 		select {
 		case <-ctx.Done():
 			fmt.Println(strings.Repeat("=", 20))
-			fmt.Println("work done")
+			fmt.Println("reply command work done")
 			fmt.Println(strings.Repeat("=", 20))
 			return
 		case <-ticker.C:
-			fmt.Println("time:", time.Now())
-			qInfo, err := fetchExchangeQuotation([]exchange{MAX, Rybit})
-			if err != nil {
-				log.Println(err.Error())
-				break
+		}
+
+		umResp, err := getUpdateMessage()
+		if err != nil {
+			log.Println(err.Error())
+			continue
+		}
+
+		if len(umResp.Result) == 0 {
+			continue
+		}
+
+		var newLastUpdateID = latestUpdateID
+		for _, v := range umResp.Result {
+			if v.UpdateID <= latestUpdateID {
+				continue
 			}
 
-			aInfo := calArbitrageInfo(defaultInvest, qInfo[Rybit].buyPrice, qInfo[MAX].sellPrice)
-
-			if aInfo.Arbitrage.LessThan(minArbitrage) {
-				break
+			if v.UpdateID > newLastUpdateID {
+				newLastUpdateID = v.UpdateID
 			}
 
-			if aInfo.Spread.LessThan(minSpread) {
-				break
+			if v.Message == nil {
+				continue
 			}
 
-			var isExcitedArbitrage, isExcitedSpread bool
-
-			if aInfo.Arbitrage.GreaterThanOrEqual(excitedArbitrage) {
-				isExcitedArbitrage = true
+			if v.Message.Text == nil {
+				continue
 			}
 
-			if aInfo.Spread.GreaterThanOrEqual(excitedSpread) {
-				isExcitedSpread = true
+			if len(v.Message.Entities) == 0 {
+				continue
 			}
 
-			if err = botSendMessage(botSendMessageReq{
-				InvestAmount:       defaultInvest,
-				ExchangeBuy:        Rybit,
-				ExchangeSell:       MAX,
-				BuyPrice:           qInfo[Rybit].buyPrice,
-				SellPrice:          qInfo[MAX].sellPrice,
-				Spread:             aInfo.Spread,
-				Arbitrage:          aInfo.Arbitrage,
-				Profit:             aInfo.Profit,
-				IsExcitedArbitrage: isExcitedArbitrage,
-				IsExcitedSpread:    isExcitedSpread,
+			if v.Message.Entities[0].Type != "bot_command" {
+				continue
+			}
+
+			cHandler := commandFactory(constant.CommandType(strings.TrimPrefix(*v.Message.Text, "/")))
+			if cHandler == nil {
+				continue
+			}
+
+			if v.Message.From == nil {
+				continue
+			}
+
+			replyMsg := cHandler.Reply(v.Message.From.ID)
+
+			if len(replyMsg) == 0 {
+				continue
+			}
+
+			if err := botSendMessage(botSendMessageReq{
+				chatID: v.Message.Chat.ID,
+				msg:    replyMsg,
 			}); err != nil {
 				log.Println(err.Error())
 			}
+		}
+		latestUpdateID = newLastUpdateID
+	}
+
+}
+
+func notifyArbitrage(ctx context.Context) {
+
+	ticker := time.NewTicker(constant.NotifyFreq)
+	fmt.Println("notify job start")
+
+	defer ticker.Stop()
+
+	defer wg.Done()
+
+	for {
+		select {
+		case <-ctx.Done():
+			fmt.Println(strings.Repeat("=", 20))
+			fmt.Println("notify arbitrage work done")
+			fmt.Println(strings.Repeat("=", 20))
+			return
+		case <-ticker.C:
+		}
+		qInfo, err := fetchExchangeQuotation([]exchange{MAX, Rybit})
+		if err != nil {
+			log.Println(err.Error())
+			return
+		}
+
+		aInfo := calArbitrageInfo(constant.DefaultInvest, qInfo[Rybit].buyPrice, qInfo[MAX].sellPrice)
+
+		if aInfo.Arbitrage.LessThan(constant.MinArbitrage) {
+			return
+		}
+
+		if aInfo.Spread.LessThan(constant.MinSpread) {
+			return
+		}
+
+		var isExcitedArbitrage, isExcitedSpread bool
+
+		if aInfo.Arbitrage.GreaterThanOrEqual(constant.ExcitedArbitrage) {
+			isExcitedArbitrage = true
+		}
+
+		if aInfo.Spread.GreaterThanOrEqual(constant.ExcitedSpread) {
+			isExcitedSpread = true
+		}
+
+		if err = botSendNotifyMessage(botSendNotifyMessageReq{
+			InvestAmount:       constant.DefaultInvest,
+			ExchangeBuy:        Rybit,
+			ExchangeSell:       MAX,
+			BuyPrice:           qInfo[Rybit].buyPrice,
+			SellPrice:          qInfo[MAX].sellPrice,
+			Spread:             aInfo.Spread,
+			Arbitrage:          aInfo.Arbitrage,
+			Profit:             aInfo.Profit,
+			IsExcitedArbitrage: isExcitedArbitrage,
+			IsExcitedSpread:    isExcitedSpread,
+		}); err != nil {
+			log.Println(err.Error())
 		}
 	}
 }
@@ -195,7 +303,7 @@ func calArbitrageInfo(invest, buyPrice, sellPrice decimal.Decimal) arbitrageInfo
 	}
 }
 
-type botSendMessageReq struct {
+type botSendNotifyMessageReq struct {
 	InvestAmount                        decimal.Decimal
 	ExchangeBuy                         exchange
 	ExchangeSell                        exchange
@@ -208,12 +316,12 @@ type botSendMessageReq struct {
 }
 
 type sendMessageBody struct {
-	ChatID    string `json:"chat_id"`
+	ChatID    int64  `json:"chat_id"`
 	Text      string `json:"text"`
 	ParseMode string `json:"parse_mode,omitempty"`
 }
 
-func botSendMessage(req botSendMessageReq) error {
+func botSendNotifyMessage(req botSendNotifyMessageReq) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 
 	arbitrage := req.Arbitrage.Mul(decimal.New(1, 2)).Truncate(2).String() + "%"
@@ -226,7 +334,7 @@ func botSendMessage(req botSendMessageReq) error {
 	}
 
 	reqBody := sendMessageBody{
-		ChatID: botGroupChatID,
+		ChatID: constant.BotTestGroupChatID,
 		Text: fmt.Sprintf(
 			msgHtml,
 			spread,
@@ -237,8 +345,8 @@ func botSendMessage(req botSendMessageReq) error {
 			req.SellPrice,
 			arbitrage,
 			req.Profit.Truncate(0),
-			botPersonalChatID,
-			author,
+			constant.BotPersonalChatID,
+			constant.Author,
 		),
 		ParseMode: "HTML",
 	}
@@ -249,13 +357,7 @@ func botSendMessage(req botSendMessageReq) error {
 		return err
 	}
 
-	httpResp, err := defaultCli.Post(url, "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		log.Println(err.Error())
-		return err
-	}
-
-	_, err = ioutil.ReadAll(httpResp.Body)
+	_, err = defaultCli.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Println(err.Error())
 		return err
@@ -269,7 +371,7 @@ func errorNotify(errMsg string) {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 
 	reqBody := sendMessageBody{
-		ChatID: botPersonalChatID,
+		ChatID: constant.BotPersonalChatID,
 		Text:   "error occur: " + errMsg,
 	}
 
@@ -295,3 +397,74 @@ var msgHtml = `<strong>&#128060;&#128060;&#128060;  Notify &#128060;&#128060;&#1
 <strong>Estimated Profit: </strong><u>%s</u>
 <strong>Author: </strong><a href="tg://user?id=%s">%s</a>
 `
+
+func getUpdateMessage() (*domain.UpdateMessageResponse, error) {
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getUpdates?offset=%d", token, latestUpdateID)
+
+	resp, err := defaultCli.Get(url)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	updateResp := domain.UpdateMessageResponse{}
+
+	err = json.Unmarshal(data, &updateResp)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	if !updateResp.Ok {
+		return nil, err
+	}
+
+	return &updateResp, nil
+}
+
+func commandFactory(c constant.CommandType) domain.CommandHandler {
+	switch c {
+	case constant.Alive:
+		return command.NewAliveCommand()
+	case constant.Help:
+		return command.NewHelpCommand()
+	case constant.Depth:
+		return command.NewDepthCommand()
+	default:
+		return command.NewUnknownCommand()
+	}
+}
+
+type botSendMessageReq struct {
+	chatID int64
+	msg    string
+}
+
+func botSendMessage(req botSendMessageReq) error {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
+
+	reqBody := sendMessageBody{
+		ChatID: req.chatID,
+		Text:   req.msg,
+	}
+
+	data, err := json.Marshal(&reqBody)
+	if err != nil {
+		log.Println(err.Error())
+		return err
+	}
+
+	_, err = defaultCli.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Println(err.Error())
+	}
+
+	return nil
+}

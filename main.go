@@ -362,7 +362,7 @@ func botSendNotifyMessage(req botSendNotifyMessageReq) error {
 	}
 
 	reqBody := sendMessageBody{
-		ChatID: constant.BotTestGroupChatID,
+		ChatID: constant.BotGroupChatID,
 		Text: fmt.Sprintf(
 			msgHtml,
 			spread,

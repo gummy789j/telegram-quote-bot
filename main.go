@@ -138,12 +138,31 @@ func replyCommand(ctx context.Context) {
 				continue
 			}
 
-			cHandler := commandFactory(constant.CommandType(strings.TrimPrefix(*v.Message.Text, "/")))
-			if cHandler == nil {
+			if v.Message.From == nil {
 				continue
 			}
 
-			if v.Message.From == nil {
+			cmd := constant.CommandType(strings.TrimSuffix(strings.TrimPrefix(*v.Message.Text, "/"), constant.BotName))
+
+			//TODO: use factory pattern to create command handler
+			if cmd == constant.Arbitrage {
+				qInfo, err := fetchExchangeQuotation([]exchange{MAX, Rybit})
+				if err != nil {
+					log.Println(err.Error())
+					return
+				}
+
+				aInfo := calArbitrageInfo(constant.DefaultInvest, qInfo[Rybit].buyPrice, qInfo[MAX].sellPrice)
+
+				if err = sendArbitrageNotify(aInfo, qInfo[Rybit].buyPrice, qInfo[MAX].sellPrice); err != nil {
+					log.Println(err.Error())
+				}
+
+				continue
+			}
+
+			cHandler := commandFactory(cmd)
+			if cHandler == nil {
 				continue
 			}
 
@@ -199,31 +218,40 @@ func notifyArbitrage(ctx context.Context) {
 			return
 		}
 
-		var isExcitedArbitrage, isExcitedSpread bool
-
-		if aInfo.Arbitrage.GreaterThanOrEqual(constant.ExcitedArbitrage) {
-			isExcitedArbitrage = true
-		}
-
-		if aInfo.Spread.GreaterThanOrEqual(constant.ExcitedSpread) {
-			isExcitedSpread = true
-		}
-
-		if err = botSendNotifyMessage(botSendNotifyMessageReq{
-			InvestAmount:       constant.DefaultInvest,
-			ExchangeBuy:        Rybit,
-			ExchangeSell:       MAX,
-			BuyPrice:           qInfo[Rybit].buyPrice,
-			SellPrice:          qInfo[MAX].sellPrice,
-			Spread:             aInfo.Spread,
-			Arbitrage:          aInfo.Arbitrage,
-			Profit:             aInfo.Profit,
-			IsExcitedArbitrage: isExcitedArbitrage,
-			IsExcitedSpread:    isExcitedSpread,
-		}); err != nil {
+		if err := sendArbitrageNotify(aInfo, qInfo[Rybit].buyPrice, qInfo[MAX].sellPrice); err != nil {
 			log.Println(err.Error())
 		}
 	}
+}
+
+func sendArbitrageNotify(aInfo arbitrageInfo, buyPrice, sellPrice decimal.Decimal) error {
+	var isExcitedArbitrage, isExcitedSpread bool
+
+	if aInfo.Arbitrage.GreaterThanOrEqual(constant.ExcitedArbitrage) {
+		isExcitedArbitrage = true
+	}
+
+	if aInfo.Spread.GreaterThanOrEqual(constant.ExcitedSpread) {
+		isExcitedSpread = true
+	}
+
+	if err := botSendNotifyMessage(botSendNotifyMessageReq{
+		InvestAmount:       constant.DefaultInvest,
+		ExchangeBuy:        Rybit,
+		ExchangeSell:       MAX,
+		BuyPrice:           buyPrice,
+		SellPrice:          sellPrice,
+		Spread:             aInfo.Spread,
+		Arbitrage:          aInfo.Arbitrage,
+		Profit:             aInfo.Profit,
+		IsExcitedArbitrage: isExcitedArbitrage,
+		IsExcitedSpread:    isExcitedSpread,
+	}); err != nil {
+		log.Println(err.Error())
+		return err
+	}
+
+	return nil
 }
 
 type quoteInfo struct {

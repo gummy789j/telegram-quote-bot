@@ -7,11 +7,12 @@ import (
 )
 
 var (
-	BotGroupChatID     int64 = -781207517
-	BotTestGroupChatID int64 = -905284654
-	BotPersonalChatID  int64 = 1881712391
-	AuthorID           int64 = 1881712391
-	Author                   = "t.me/gummy789j"
+	BotGroupChatID     int64  = -781207517
+	BotTestGroupChatID int64  = -905284654
+	BotPersonalChatID  int64  = 1881712391
+	AuthorID           int64  = 1881712391
+	Author                    = "t.me/gummy789j"
+	BotName            string = "@gummy_s_bot"
 )
 
 var (
@@ -27,7 +28,8 @@ var (
 type CommandType string
 
 var (
-	Alive CommandType = "alive"
-	Help  CommandType = "help"
-	Depth CommandType = "depth"
+	Alive     CommandType = "alive"
+	Help      CommandType = "help"
+	Depth     CommandType = "depth"
+	Arbitrage CommandType = "arbitrage"
 )

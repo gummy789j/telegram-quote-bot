@@ -7,7 +7,8 @@ import (
 )
 
 type Config struct {
-	Telegram *TelegramCfg
+	APIServer *APIServerCfg
+	Telegram  *TelegramCfg
 }
 
 func NewConfig(isDev ...bool) *Config {
@@ -15,12 +16,20 @@ func NewConfig(isDev ...bool) *Config {
 		isDevelopment = isDev[0]
 	}
 
-	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	port := os.Getenv("PORT")
+	if len(port) == 0 {
+		port = "8080"
+	}
 
+	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	telegramToken = "6156662592:AAFl4gLMCjGjb2qQdqXeQQ6fvoqNKtP8MXI"
 	if len(telegramToken) == 0 {
 		panic("TELEGRAM_BOT_TOKEN is not set")
 	}
 	return &Config{
+		APIServer: &APIServerCfg{
+			Port: port,
+		},
 		Telegram: &TelegramCfg{
 			AdminChatID: 1881712391,
 			AuthorID:    1881712391,
@@ -33,13 +42,17 @@ func NewConfig(isDev ...bool) *Config {
 
 				// info
 				DefaultInvest:    decimal.NewFromFloat(500000),
-				MinSpread:        decimal.NewFromFloat(0.15),
+				MinSpread:        decimal.NewFromFloat(0.1),
 				MinArbitrage:     decimal.NewFromFloat(0.005),
 				ExcitedSpread:    decimal.NewFromFloat(0.3),
 				ExcitedArbitrage: decimal.NewFromFloat(0.01),
 			},
 		},
 	}
+}
+
+type APIServerCfg struct {
+	Port string
 }
 
 type TelegramCfg struct {

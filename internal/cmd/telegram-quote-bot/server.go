@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 	"log"
-	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gummy789j/telegram-quote-bot/internal/config"
 	comp "github.com/gummy789j/telegram-quote-bot/internal/repository/comparison"
 	tb "github.com/gummy789j/telegram-quote-bot/internal/repository/telegram_bot"
@@ -14,7 +14,7 @@ import (
 	"github.com/gummy789j/telegram-quote-bot/internal/usecase"
 )
 
-func RunServer(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup) {
+func RunServer(ctx context.Context, cfg *config.Config) *gin.Engine {
 
 	telegramBotRepo := tb.NewTelegramBotRepo(transport.NewHttpClient(), cfg.Telegram)
 	comparisonRepo := comp.NewComparisonClient(transport.NewHttpClient())
@@ -25,16 +25,25 @@ func RunServer(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup) {
 		task.NewReplyTask(cfg.Telegram, telegramUseCase),
 	}
 
-	wg.Add(len(tasks))
+	jobProcessor(ctx, tasks)
 
-	jobProcessor(ctx, wg, tasks)
+	g := gin.New()
+
+	g.GET("/", func(c *gin.Context) {
+		c.String(200, "alive")
+	})
+
+	g.GET("/ping", func(c *gin.Context) {
+		c.String(200, "pong")
+	})
+
+	return g
 }
 
-func jobProcessor(pctx context.Context, wg *sync.WaitGroup, tasks []task.Task) {
+func jobProcessor(pctx context.Context, tasks []task.Task) {
 	for _, t := range tasks {
 
-		go func(pctx context.Context, wg *sync.WaitGroup, t task.Task) {
-			defer wg.Done()
+		go func(pctx context.Context, t task.Task) {
 
 			runTime, tickTime := t.Freq()
 
@@ -55,6 +64,6 @@ func jobProcessor(pctx context.Context, wg *sync.WaitGroup, tasks []task.Task) {
 				}
 			}
 
-		}(pctx, wg, t)
+		}(pctx, t)
 	}
 }

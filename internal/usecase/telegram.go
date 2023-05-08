@@ -120,7 +120,7 @@ func (u *telegramUseCase) NotifyArbitrage(ctx context.Context, req dUc.NotifyArb
 	// calculate arbitrage info
 	aInfo := calArbitrageInfo(u.cfg.QuoteComparisonBot.DefaultInvest, qInfo.Infos[req.ExchangeBuy].BuyPrice, qInfo.Infos[req.ExchangeSell].SellPrice)
 
-	if aInfo.Arbitrage.LessThan(u.cfg.QuoteComparisonBot.MinArbitrage) ||
+	if aInfo.Arbitrage.LessThan(u.cfg.QuoteComparisonBot.MinArbitrage) &&
 		aInfo.Spread.LessThan(u.cfg.QuoteComparisonBot.MinSpread) {
 		return nil
 	}

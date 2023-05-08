@@ -22,7 +22,6 @@ func NewConfig(isDev ...bool) *Config {
 	}
 
 	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
-	telegramToken = "6156662592:AAFl4gLMCjGjb2qQdqXeQQ6fvoqNKtP8MXI"
 	if len(telegramToken) == 0 {
 		panic("TELEGRAM_BOT_TOKEN is not set")
 	}

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 
+	_ "github.com/joho/godotenv/autoload"
 	"github.com/shopspring/decimal"
 )
 

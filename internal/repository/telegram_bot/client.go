@@ -48,17 +48,15 @@ func (t *telegramBotRepo) SendArbitrageNotify(ctx context.Context, req domain.Se
 		spread = fmt.Sprintf("%s%s%s", constant.EmojiCelebration, spread, constant.EmojiCelebration)
 	}
 
-	profit := req.Profit.Truncate(0).String()
-	tmpl := tmplArbitrageNotify
+	// profit := req.Profit.Truncate(0).String()
+	tmpl := tmplArbitrageNotifySimple
 	text := tmpl.Format(
 		spread,
-		req.InvestAmount,
 		req.ExchangeBuy,
 		req.BuyPrice,
 		req.ExchangeSell,
 		req.SellPrice,
 		arbitrage,
-		profit,
 		t.cfg.AuthorID,
 		t.cfg.Author,
 	)

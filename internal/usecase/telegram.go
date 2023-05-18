@@ -245,7 +245,7 @@ func newHelpCommand(cfg *config.TelegramCfg, tb dRepo.TelegramBotRepo) commandHa
 }
 
 func (c *helpCommand) Reply(toID int64, chatID int64) error {
-	msg := fmt.Sprintf("我是懶惰老鼠，只喜歡搬 spread 大於 %s 而且 arbitrage 大於 %s%%的單", c.cfg.QuoteComparisonBot.MinSpread, c.cfg.QuoteComparisonBot.MinArbitrage.Mul(decimal.New(1, 2)))
+	msg := fmt.Sprintf("我是懶惰老鼠，只喜歡搬 spread 大於 %s Or arbitrage 大於 %s%%的單", c.cfg.QuoteComparisonBot.MinSpread, c.cfg.QuoteComparisonBot.MinArbitrage.Mul(decimal.New(1, 2)))
 
 	return c.tb.SendMessage(context.Background(), dRepo.SendMessageRequest{
 		ChatID: chatID,

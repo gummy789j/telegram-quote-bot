@@ -5,6 +5,13 @@ import "fmt"
 type TextTemplate string
 
 var (
+	tmplArbitrageNotifySimple TextTemplate = `<strong>Spread: </strong><u>%s &#128060;</u>
+	<strong>%s Buy: </strong><u>%s</u>
+	<strong>%s Sell: </strong><u>%s</u>
+	<strong>Arbitrage: </strong><u>%s</u>
+	<strong>Author: </strong><a href="tg://user?id=%s">%s</a>
+	`
+
 	tmplArbitrageNotify TextTemplate = `<strong>&#128060;&#128060;&#128060;  Notify &#128060;&#128060;&#128060;</strong>
 <strong>=======================</strong>
 <strong>Spread: </strong><u>%s</u>
@@ -34,6 +41,8 @@ func (t TextTemplate) Format(args ...interface{}) string {
 
 func (t TextTemplate) Type() TemplateType {
 	switch t {
+	case tmplArbitrageNotifySimple:
+		return HTML
 	case tmplArbitrageNotify:
 		return HTML
 	case tmplErrorNotify:
